@@ -1,4 +1,4 @@
-name: Build signed Anland APKs
+name: Build signed standard Anland APK
 
 on:
   push:
@@ -46,7 +46,7 @@ jobs:
           umask 077
           printf '%s' "$ANLAND_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/anland-signing.jks"
           echo "ANLAND_KEYSTORE_PATH=$RUNNER_TEMP/anland-signing.jks" >> "$GITHUB_ENV"
-      - name: Build signed APKs
+      - name: Build signed standard APK
         shell: bash
         env:
           ANLAND_KEY_ALIAS: ${{ secrets.ANLAND_KEY_ALIAS }}
@@ -55,7 +55,6 @@ jobs:
         run: |
           set -euo pipefail
           tools/build-app.sh
-          tools/build-compatible-app.sh
       - name: Verify signatures and calculate checksums
         shell: bash
         run: |
@@ -65,7 +64,7 @@ jobs:
             grep -F 'Signer #1 certificate SHA-256 digest: b6da01480eefd5fbf2cd3771b8d1021ec791304bdd6c4bf41d3faabad48ee5e1' "$RUNNER_TEMP/cert.txt"
           done
           (cd out && sha256sum *.apk | sort -k2 > sha256sums.txt)
-      - name: Upload signed APKs
+      - name: Upload signed standard APK
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: anland-signed-${{ github.sha }}

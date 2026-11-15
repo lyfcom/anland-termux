@@ -10,7 +10,7 @@ Rendering, pointer coordinates, acceleration, and capture policy are unchanged.
 
 ## Signed builds
 
-The main-branch workflow builds both transport variants. Repository Actions
+The main-branch workflow builds only the standard transport variant. Repository Actions
 Secrets: ANLAND_KEYSTORE_B64, ANLAND_KEY_ALIAS, ANLAND_STORE_PASSWORD,
 ANLAND_KEY_PASSWORD. The standard variant retains the upstream Termux GitHub
 certificate because its shared UID requires the same signer as Termux. This is
