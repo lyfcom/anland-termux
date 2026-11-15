@@ -823,7 +823,8 @@ public class MainActivity extends Activity
         setExtraKeysBarVisible(shouldShowBar(systemIme.isImeVisible()));
 
         setupFullscreen();
-        DisplayRefreshRate.apply(this, surfaceView.getHolder().getSurface());
+        DisplayRefreshRate.apply(this, getSharedPreferences(PREFS_NAME, MODE_PRIVATE),
+            surfaceView.getHolder().getSurface());
         DisplayManager dm = getSystemService(DisplayManager.class);
         if (dm != null)
             dm.registerDisplayListener(displayListener, null);
@@ -1113,7 +1114,8 @@ public class MainActivity extends Activity
         viewWidth = width;
         viewHeight = height;
         surfaceReady = true;
-        DisplayRefreshRate.apply(this, holder.getSurface());
+        DisplayRefreshRate.apply(this, getSharedPreferences(PREFS_NAME, MODE_PRIVATE),
+            holder.getSurface());
         // Same ordering guarantee as onResume: camera service settled before connect.
         applyCameraState();
         stopNative();

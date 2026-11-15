@@ -1,6 +1,7 @@
 package com.anland.termux;
 
 import android.app.Activity;
+import android.content.SharedPreferences;
 import android.view.Display;
 import android.view.Surface;
 import android.view.WindowManager;
@@ -28,9 +29,8 @@ final class DisplayRefreshRate {
             .mapToInt(mode -> Math.round(mode.getRefreshRate())).distinct().sorted()).toArray();
     }
 
-    static void apply(Activity activity, Surface surface) {
-        int preference = activity.getSharedPreferences(MainActivity.PREFS_NAME, Activity.MODE_PRIVATE)
-            .getInt(KEY, 0);
+    static void apply(Activity activity, SharedPreferences prefs, Surface surface) {
+        int preference = prefs.getInt(KEY, 0);
         Display display = activity.getDisplay();
         float rate = display == null ? 0f : supportedModes(display)
             .filter(mode -> Math.round(mode.getRefreshRate()) == preference)
