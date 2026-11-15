@@ -335,6 +335,14 @@ public class MainActivity extends Activity
 
         FrameLayout root = new FrameLayout(this) {
             @Override
+            protected void onAttachedToWindow() {
+                super.onAttachedToWindow();
+                // Ordinary mice use POINTER; captured relative mice use TRACKBALL.
+                requestUnbufferedDispatch(InputDevice.SOURCE_CLASS_POINTER
+                    | InputDevice.SOURCE_CLASS_TRACKBALL);
+            }
+
+            @Override
             public boolean dispatchCapturedPointerEvent(MotionEvent event) {
                 if (handleCapturedPointerEvent(event))
                     return true;
