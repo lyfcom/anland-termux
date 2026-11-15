@@ -32,11 +32,15 @@ final class DisplayRefreshRate {
     static void apply(Activity activity, SharedPreferences prefs, Surface surface) {
         int preference = prefs.getInt(KEY, 0);
         Display display = activity.getDisplay();
-        float rate = display == null ? 0f : supportedModes(display)
-            .filter(mode -> Math.round(mode.getRefreshRate()) == preference)
-            .map(Display.Mode::getRefreshRate).findFirst().orElse(0f);
+        Display.Mode mode = display == null ? null : supportedModes(display)
+            .filter(candidate -> Math.round(candidate.getRefreshRate()) == preference)
+            .findFirst().orElse(null);
+        float rate = mode == null ? 0f : mode.getRefreshRate();
+        int modeId = mode == null ? 0 : mode.getModeId();
         WindowManager.LayoutParams params = activity.getWindow().getAttributes();
-        if (Float.compare(params.preferredRefreshRate, rate) != 0) {
+        if (params.preferredDisplayModeId != modeId
+                || Float.compare(params.preferredRefreshRate, rate) != 0) {
+            params.preferredDisplayModeId = modeId;
             params.preferredRefreshRate = rate;
             activity.getWindow().setAttributes(params);
         }
