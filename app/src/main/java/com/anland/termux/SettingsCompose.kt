@@ -756,8 +756,17 @@ private fun androidx.compose.foundation.lazy.LazyListScope.displayPage(
         val labels = stringArrayResource(R.array.res_preset_labels).toList()
         val orientation = rememberStringPref(prefs, KEY_SCREEN_ORIENTATION, screenOrientations[0])
         val cutout = rememberStringPref(prefs, DisplayCutoutMode.KEY, DisplayCutoutMode.get(prefs))
+        val refreshRate = rememberIntPref(prefs, DisplayRefreshRate.KEY, 0)
+        val refreshRates = remember(activity) { DisplayRefreshRate.supportedRates(activity.display).toList() }
+        val refreshLabels = refreshRates.map { if (it == 0) stringResource(R.string.refresh_rate_auto) else "$it Hz" }
         SettingCard {
             SectionTitle(R.string.section_screen_layout)
+            SettingDropdown(R.string.refresh_rate_label, refreshRate.value, refreshRates, refreshLabels) {
+                refreshRate.value = it
+                prefs.edit().putInt(DisplayRefreshRate.KEY, it).apply()
+            }
+            Text(stringResource(R.string.refresh_rate_hint), style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
             SettingDropdown(R.string.section_resolution, preset, labels.indices.toList(), labels) {
                 preset = it
                 resolvePreset(activity, it)?.let { (w, h) ->

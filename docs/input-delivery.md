@@ -22,3 +22,12 @@ Without these variables, local builds retain the upstream test-key defaults.
 
 Build success and signature verification do not measure pointer latency.
 Compare touchpad and external-mouse behavior on the device after installation.
+
+## Refresh rate
+
+Display settings lists Automatic and the rates advertised for the current panel
+resolution. The preference requests a window/surface rate on desktop resume and
+surface creation/change. Automatic clears both requests. The existing display
+listener forwards the actual rate to KWin, so an OS limit cannot make the desktop
+assume the requested rate was granted. The preference is included in settings
+backup. No global Android settings are changed.

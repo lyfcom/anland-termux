@@ -366,4 +366,8 @@
     <string name='hud_controls_switch'>显示浮动 HUD 控件</string>
     <string name='hud_controls_hint'>显示可编辑的触摸板、方向键、摇杆和快捷按键。</string>
     <string name='hud_edit_layout'>编辑浮动控件布局</string>
+
+    <string name="refresh_rate_label">刷新率</string>
+    <string name="refresh_rate_auto">跟随系统</string>
+    <string name="refresh_rate_hint">返回桌面后生效，实际刷新率由系统决定。</string>
 </resources>

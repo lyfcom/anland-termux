@@ -164,7 +164,7 @@ final class SettingsBackup {
         Map<String, String> types = new HashMap<>();
         for (String key : new String[]{"bound_keycode", "custom_width", "custom_height",
                 "speaker_latency_ms", "mic_latency_ms", "captured_pointer_speed_factor",
-                "hud_layout_slot"})
+                "hud_layout_slot", DisplayRefreshRate.KEY})
             types.put(key, "int");
         for (String key : new String[]{"mouse_speed", "scroll_speed", "touchpad_scroll_threshold",
                 "touchpad_move_threshold", "touchpad_gesture_scale"}) types.put(key, "float");
