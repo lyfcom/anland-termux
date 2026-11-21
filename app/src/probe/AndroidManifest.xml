@@ -1,0 +1,5 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:label="Anland Display Probe" android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
+        <activity android:name=".DisplayProbe" android:screenOrientation="landscape" android:exported="true" />
+    </application>
+</manifest>
