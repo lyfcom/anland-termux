@@ -34,7 +34,6 @@ import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.PointerIcon;
-import android.view.RoundedCorner;
 import android.view.Surface;
 import android.view.SurfaceControl;
 import android.view.SurfaceHolder;
@@ -658,63 +657,14 @@ public class MainActivity extends Activity
                 WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
         }
         WindowManager.LayoutParams attrs = getWindow().getAttributes();
-        attrs.layoutInDisplayCutoutMode = DisplayCutoutMode.hidesCutout(mDisplayCutoutMode)
-            ? WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
-            : WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_NEVER;
+        // Start with the full window so system and app cutout margins never stack.
+        attrs.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS;
         getWindow().setAttributes(attrs);
     }
 
     private void applyDisplaySafeInsets(WindowInsets insets) {
-        Insets cutout = Insets.NONE;
-        // Android 15+ forces full-screen apps targeting API 35+ into cutout areas,
-        // even when NEVER is requested. Recreate Termux:X11's safe layout manually.
-        if (!DisplayCutoutMode.hidesCutout(mDisplayCutoutMode)
-                && Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM)
-            cutout = insets.getInsets(WindowInsets.Type.displayCutout());
-
-        int roundedCornerTop = 0;
-        int roundedCornerBottom = 0;
-        int roundedCornerLeft = 0;
-        int roundedCornerRight = 0;
-        if (!DisplayCutoutMode.hidesRoundedCorners(mDisplayCutoutMode)
-                && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            // Keep full-width strips clear of the rounded corners, matching the
-            // rectangular safe area used below edge-to-edge input methods.
-            RoundedCorner topLeft = insets.getRoundedCorner(RoundedCorner.POSITION_TOP_LEFT);
-            RoundedCorner topRight = insets.getRoundedCorner(RoundedCorner.POSITION_TOP_RIGHT);
-            RoundedCorner bottomLeft = insets.getRoundedCorner(RoundedCorner.POSITION_BOTTOM_LEFT);
-            RoundedCorner bottomRight = insets.getRoundedCorner(RoundedCorner.POSITION_BOTTOM_RIGHT);
-            if (topLeft != null) {
-                roundedCornerTop = topLeft.getRadius();
-                roundedCornerLeft = topLeft.getRadius();
-            }
-            if (topRight != null) {
-                roundedCornerTop = Math.max(roundedCornerTop, topRight.getRadius());
-                roundedCornerRight = topRight.getRadius();
-            }
-            if (bottomLeft != null) {
-                roundedCornerBottom = bottomLeft.getRadius();
-                roundedCornerLeft = Math.max(roundedCornerLeft, bottomLeft.getRadius());
-            }
-            if (bottomRight != null) {
-                roundedCornerBottom = Math.max(roundedCornerBottom, bottomRight.getRadius());
-                roundedCornerRight = Math.max(roundedCornerRight, bottomRight.getRadius());
-            }
-        }
-
-        Insets safeInsets;
-        boolean avoidAllInLandscape = DisplayCutoutMode.HIDE_NONE.equals(mDisplayCutoutMode)
-            && getResources().getConfiguration().orientation
-                == Configuration.ORIENTATION_LANDSCAPE;
-        if (avoidAllInLandscape) {
-            // The phone's physical top and bottom become the short left and
-            // right edges in landscape and reverse-landscape orientations.
-            safeInsets = Insets.of(Math.max(cutout.left, roundedCornerLeft), 0,
-                Math.max(cutout.right, roundedCornerRight), 0);
-        } else {
-            safeInsets = Insets.of(cutout.left, Math.max(cutout.top, roundedCornerTop),
-                cutout.right, Math.max(cutout.bottom, roundedCornerBottom));
-        }
+        Insets safeInsets = DisplayCutoutMode.safeInsets(mDisplayCutoutMode, insets,
+            getResources().getConfiguration().orientation);
 
         // The raised desktop ends directly above the IME. Keeping the display's
         // bottom safe inset there would leave a black strip between the desktop
@@ -779,10 +729,8 @@ public class MainActivity extends Activity
         String displayCutoutMode = DisplayCutoutMode.get(
             getSharedPreferences(PREFS_NAME, MODE_PRIVATE));
         if (!mDisplayCutoutMode.equals(displayCutoutMode)) {
-            // Display safe-area changes invalidate Surface and inset dimensions; rebuild the
-            // activity before restarting the native consumer, as Termux:X11 does.
-            recreate();
-            return;
+            mDisplayCutoutMode = displayCutoutMode;
+            mRoot.requestApplyInsets();
         }
 
         applyScreenOrientation();
@@ -853,6 +801,12 @@ public class MainActivity extends Activity
         isTouchpadMode = prefs.getBoolean(KEY_TOUCHPAD_MODE, false);
         virtualTouchpad.setAccelStrength(prefs.getFloat(KEY_MOUSE_ACCEL, 1.0f));
         reloadPointerCapturePreferences();
+    }
+
+    @Override
+    public void onConfigurationChanged(Configuration configuration) {
+        super.onConfigurationChanged(configuration);
+        mRoot.requestApplyInsets();
     }
 
     private void applyScreenOrientation() {
