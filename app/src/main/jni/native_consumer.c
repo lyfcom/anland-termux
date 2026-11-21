@@ -97,10 +97,9 @@ static bool motion_has_last = false;
 static float motion_last_x = 0.0f;
 static float motion_last_y = 0.0f;
 
-static int collect_dmabufs(struct consumer_state *s)
+static int collect_dmabufs(struct consumer_state *s, int target)
 {
     ANativeWindow *win = s->window;
-    int target = s->buf_count;
     int found = 0;
 
     LOGI("collecting %d dma-bufs via dequeue/queue", target);
@@ -114,12 +113,9 @@ static int collect_dmabufs(struct consumer_state *s)
                 close(fence);
             break;
         }
-        if (fence >= 0)
-            close(fence);   /* enumeration only: no need to wait the fence */
-
         if (!anb->handle || anb->handle->numFds < 1) {
             LOGE("dequeued buffer has no dma-buf handle on attempt %d", attempt);
-            api.cancelBuffer(win, anb, -1);
+            api.cancelBuffer(win, anb, fence);
             continue;
         }
 
@@ -135,13 +131,14 @@ static int collect_dmabufs(struct consumer_state *s)
             }
         }
 
-        /* post it back so the next dequeue rotates to another slot */
-        api.queueBuffer(win, anb, -1);
+        int dup_fd = dup_found ? -1 : dup(fd);
+        /* Post it back so the next dequeue rotates to another slot. */
+        if (api.queueBuffer(win, anb, fence) != 0) {
+            if (dup_fd >= 0)
+                close(dup_fd);
+            break;
+        }
 
-        if (dup_found)
-            continue;
-
-        int dup_fd = dup(fd);
         if (dup_fd < 0)
             continue;
 
@@ -384,6 +381,44 @@ static int recv_fd_via_root_helper(const char *daemon_sock,
     return fd;
 }
 
+static int connect_native_window(struct consumer_state *s)
+{
+    ANativeWindow *win = s->window;
+    /* Reset the producer connection before collecting a new pool. */
+    anw_api_disconnect(win, ANW_API_CPU);
+    if (anw_api_connect(win, ANW_API_CPU) != 0) {
+        LOGE("api_connect(CPU) failed");
+        return -1;
+    }
+    return ANativeWindow_setBuffersGeometry(win, s->screen_w, s->screen_h,
+                                            AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM);
+}
+
+static int prepare_dmabufs(struct consumer_state *s)
+{
+    if (connect_native_window(s) != 0)
+        return -1;
+
+    int min_undequeued = 0;
+    if (api.query(s->window, ANATIVEWINDOW_QUERY_MIN_UNDEQUEUED_BUFFERS,
+                  &min_undequeued) != 0)
+        return -1;
+
+    for (int extra = 1; extra <= 2; extra++) {
+        int count = min_undequeued + extra;
+        if (count > MAX_COLLECT_BUFS)
+            count = MAX_COLLECT_BUFS;
+        if (api.setBufferCount(s->window, count) == 0 && collect_dmabufs(s, count) == 0)
+            return 0;
+        if (extra == 1) {
+            LOGI("Retrying DMA-BUF collection with the original buffer pool size");
+            if (connect_native_window(s) != 0)
+                return -1;
+        }
+    }
+    return -1;
+}
+
 static int do_connect(struct consumer_state *s)
 {
     atomic_store(&g_daemon_connected, false);
@@ -430,27 +465,7 @@ static int do_connect(struct consumer_state *s)
        s->screen_h = ANativeWindow_getHeight(win);
     }
 
-    /* dequeueBuffer needs the window connected to an API first (ANativeWindow_lock
-     * did this internally). Disconnect first so reconnect is idempotent. */
-    anw_api_disconnect(win, ANW_API_CPU);
-    if (anw_api_connect(win, ANW_API_CPU) != 0) {
-        LOGE("api_connect(CPU) failed");
-        return -1;
-    }
-
-    ANativeWindow_setBuffersGeometry(win, s->screen_w, s->screen_h,
-                                     AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM);
-
-    int min_undequeued = 0;
-    api.query(win, ANATIVEWINDOW_QUERY_MIN_UNDEQUEUED_BUFFERS, &min_undequeued);
-    int total = min_undequeued + 2;
-    if (total > MAX_COLLECT_BUFS)
-        total = MAX_COLLECT_BUFS;
-
-    api.setBufferCount(win, total);
-
-    s->buf_count = total;
-    if (collect_dmabufs(s) < 0)
+    if (prepare_dmabufs(s) != 0)
         return -1;
 
     LOGI("connecting to %s (%dx%d, %d bufs, root=%d, compatible=%d)", sock,

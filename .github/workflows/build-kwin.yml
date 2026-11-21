@@ -15,6 +15,13 @@ on:
         description: 'Tag'
         required: true
         default: 'anland-5.8-4_6.6.4-0ubuntu92'
+      debian_kwin_repository:
+        description: 'KWin source repository for Debian 13'
+        type: choice
+        default: lfdevs/kwin
+        options:
+          - lfdevs/kwin
+          - lyfcom/kwin
 
 permissions:
   contents: write
@@ -52,11 +59,14 @@ jobs:
           ccache --show-stats
 
       - name: Clone repository
+        env:
+          KWIN_REPOSITORY: ${{ inputs.debian_kwin_repository }}
+          KWIN_REF: ${{ inputs.tag }}
         run: |
           cd ~
           git config --global user.email "actions@github.com"
           git config --global user.name "GitHub Actions"
-          git clone -b ${{ github.event.inputs.tag }} --depth 1 https://github.com/lfdevs/kwin.git kwin
+          git clone --branch "$KWIN_REF" --depth 1 "https://github.com/$KWIN_REPOSITORY.git" kwin
           cd kwin
           git switch -c ci-build
 
