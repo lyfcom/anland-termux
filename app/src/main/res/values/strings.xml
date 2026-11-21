@@ -367,6 +367,8 @@
     <string name='hud_controls_hint'>Show editable touchpad, D-pad, stick and shortcut controls.</string>
     <string name='hud_edit_layout'>Edit floating control layout</string>
 
+    <string name="direct_presentation_label">Low-latency display</string>
+    <string name="direct_presentation_hint">Submit frames directly to SurfaceControl. Applies when returning to the desktop.</string>
     <string name="refresh_rate_label">Refresh rate</string>
     <string name="refresh_rate_auto">Automatic</string>
     <string name="refresh_rate_hint">Applies when returning to the desktop. The system decides the actual refresh rate.</string>

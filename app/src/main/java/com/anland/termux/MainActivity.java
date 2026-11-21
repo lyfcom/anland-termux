@@ -36,6 +36,7 @@ import android.view.MotionEvent;
 import android.view.PointerIcon;
 import android.view.RoundedCorner;
 import android.view.Surface;
+import android.view.SurfaceControl;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
@@ -61,6 +62,8 @@ public class MainActivity extends Activity
     // System-clipboard bridge; also the target for the native clipboard callbacks.
     private Clipboard clipboard;
     private static final String PREFS_NAME = "anland_settings";
+    static final String KEY_DIRECT_PRESENTATION = "direct_presentation";
+    private static final String EXTRA_DIRECT_PRESENTATION = "directPresentation";
     private int customScreenWidth = 0;
     private int customScreenHeight = 0;
     private int viewWidth = 0;
@@ -310,6 +313,7 @@ public class MainActivity extends Activity
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        applyPresentationRequest(getIntent());
         mHudEditorRequested = ACTION_EDIT_HUD.equals(getIntent().getAction());
 
         setupMediaAudio();
@@ -485,6 +489,7 @@ public class MainActivity extends Activity
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
+        applyPresentationRequest(intent);
         if (ACTION_EDIT_HUD.equals(intent.getAction())) {
             setIntent(intent);
             mHudEditorRequested = true;
@@ -836,7 +841,7 @@ public class MainActivity extends Activity
         if (surfaceReady) {
             stopNative();
             applyConnectionConfig();
-            Native.nativeStart(surfaceView.getHolder().getSurface(), clipboard);
+            startConsumer(surfaceView.getHolder().getSurface());
             pushRefreshRate();
             applyMicState();
             applyAudioLatency();
@@ -1104,6 +1109,26 @@ public class MainActivity extends Activity
         }
     }
 
+    private void applyPresentationRequest(Intent intent) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA && intent.hasExtra(EXTRA_DIRECT_PRESENTATION)) {
+            getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+                .putBoolean(KEY_DIRECT_PRESENTATION, intent.getBooleanExtra(EXTRA_DIRECT_PRESENTATION, false))
+                .apply();
+        }
+    }
+
+    private void startConsumer(Surface surface) {
+        SurfaceControl directParent = null;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA
+                && getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getBoolean(KEY_DIRECT_PRESENTATION, false)) {
+            SurfaceControl control = surfaceView.getSurfaceControl();
+            if (control != null && control.isValid()) {
+                directParent = control;
+            }
+        }
+        Native.nativeStart(surface, clipboard, directParent);
+    }
+
     @Override
     public void surfaceCreated(SurfaceHolder holder) {
     }
@@ -1120,7 +1145,7 @@ public class MainActivity extends Activity
         applyCameraState();
         stopNative();
         applyConnectionConfig();
-        Native.nativeStart(holder.getSurface(), clipboard);
+        startConsumer(holder.getSurface());
         pushRefreshRate();
         applyMicState();
         applyAudioLatency();

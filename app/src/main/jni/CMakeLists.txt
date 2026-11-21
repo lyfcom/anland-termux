@@ -1,10 +1,11 @@
 cmake_minimum_required(VERSION 3.18)
-project(anland_consumer C)
+project(anland_consumer C CXX)
 
 set(ANLAND_CORE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/anland_core)
 
 add_library(anland_consumer SHARED
     native_consumer.c
+    direct_surface.cpp
     native_audio.c
     camera_service.c
     ${ANLAND_CORE_DIR}/libdisplay_consumer/display_consumer.c
