@@ -71,6 +71,7 @@ public final class DisplayProbe extends Activity implements SurfaceHolder.Callba
                 .setName("AnlandDisplayProbeDirect")
                 .setParent(view.getSurfaceControl())
                 .setOpaque(true)
+                .setHidden(false)
                 .build();
         reader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 3,
                 HardwareBuffer.USAGE_GPU_SAMPLED_IMAGE | HardwareBuffer.USAGE_COMPOSER_OVERLAY);
@@ -112,7 +113,7 @@ public final class DisplayProbe extends Activity implements SurfaceHolder.Callba
                 try (release; buffer; image) {
                     release.awaitForever();
                 }
-            }).show(layer).addTransactionCommittedListener(getMainExecutor(), () -> {
+            }).addTransactionCommittedListener(getMainExecutor(), () -> {
                 // A new frame is produced only after the previous one was latched.
                 if (reader == source) draw(source.getSurface());
             }).apply();
