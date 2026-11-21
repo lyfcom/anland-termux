@@ -1105,6 +1105,14 @@ public class MainActivity extends Activity
         }
     }
 
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        if (intent.hasExtra("directPresentation")) {
+            setIntent(intent);
+        }
+    }
+
     private void startConsumer(Surface surface) {
         SurfaceControl directParent = null;
         if (Build.VERSION.SDK_INT >= 36 && getIntent().getBooleanExtra("directPresentation", false)) {
