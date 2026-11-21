@@ -6,6 +6,12 @@ android {
     namespace = "com.anland.latencyprobe"
     compileSdk = 37
     compileSdkMinor = 2
+    enableKotlin = false
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
 
     signingConfigs {
         termuxGitHub {

@@ -19,7 +19,6 @@ import android.view.SurfaceControl;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.WindowInsets;
-import android.view.WindowInsetsController;
 import android.view.WindowManager;
 
 import java.io.IOException;
@@ -50,12 +49,11 @@ public final class DisplayProbe extends Activity implements SurfaceHolder.Callba
                 break;
             }
         }
-        WindowInsetsController controller = getWindow().getInsetsController();
-        controller.hide(WindowInsets.Type.systemBars());
         stripe.setColor(Color.rgb(100, 145, 190));
         view = new SurfaceView(this);
         view.getHolder().addCallback(this);
         setContentView(view);
+        view.post(() -> view.getWindowInsetsController().hide(WindowInsets.Type.systemBars()));
     }
 
     @Override
