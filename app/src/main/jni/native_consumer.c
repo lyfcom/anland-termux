@@ -20,6 +20,7 @@
 #include "anw_hidden.h"
 #include "camera_service.h"
 #include "display_consumer.h"
+#include "direct_surface.h"
 #include "native_audio.h"
 #include "protocol.h"
 #include "socket_utils.h"
@@ -46,6 +47,8 @@ static void on_exit_fallback(void *userdata);
 struct consumer_state {
     pthread_mutex_t lock;
     ANativeWindow *window;
+    struct direct_surface *direct;
+    bool direct_disabled;
     display_ctx *ctx;
     pthread_t render_thread;
     volatile bool running;
@@ -430,28 +433,44 @@ static int do_connect(struct consumer_state *s)
        s->screen_h = ANativeWindow_getHeight(win);
     }
 
-    /* dequeueBuffer needs the window connected to an API first (ANativeWindow_lock
-     * did this internally). Disconnect first so reconnect is idempotent. */
-    anw_api_disconnect(win, ANW_API_CPU);
-    if (anw_api_connect(win, ANW_API_CPU) != 0) {
-        LOGE("api_connect(CPU) failed");
-        return -1;
+    if (s->direct && !s->direct_disabled) {
+        s->buf_count = DIRECT_BUFFER_COUNT;
+        for (int i = 0; i < DIRECT_BUFFER_COUNT; i++)
+            s->dmabuf_fds[i] = -1;
+        if (direct_surface_export(s->direct, s->screen_w, s->screen_h,
+                                  ANativeWindow_getWidth(win), ANativeWindow_getHeight(win),
+                                  s->dmabuf_fds, s->dmabuf_infos) == 0) {
+            LOGI("using direct SurfaceControl presentation");
+        } else {
+            LOGE("could not allocate direct presentation buffers");
+            cleanup_dmabufs(s);
+            s->direct_disabled = true;
+        }
     }
+    if (!s->direct || s->direct_disabled) {
+        /* dequeueBuffer needs the window connected to an API first (ANativeWindow_lock
+         * did this internally). Disconnect first so reconnect is idempotent. */
+        anw_api_disconnect(win, ANW_API_CPU);
+        if (anw_api_connect(win, ANW_API_CPU) != 0) {
+            LOGE("api_connect(CPU) failed");
+            return -1;
+        }
 
-    ANativeWindow_setBuffersGeometry(win, s->screen_w, s->screen_h,
-                                     AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM);
+        ANativeWindow_setBuffersGeometry(win, s->screen_w, s->screen_h,
+                                         AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM);
 
-    int min_undequeued = 0;
-    api.query(win, ANATIVEWINDOW_QUERY_MIN_UNDEQUEUED_BUFFERS, &min_undequeued);
-    int total = min_undequeued + 2;
-    if (total > MAX_COLLECT_BUFS)
-        total = MAX_COLLECT_BUFS;
+        int min_undequeued = 0;
+        api.query(win, ANATIVEWINDOW_QUERY_MIN_UNDEQUEUED_BUFFERS, &min_undequeued);
+        int total = min_undequeued + 2;
+        if (total > MAX_COLLECT_BUFS)
+            total = MAX_COLLECT_BUFS;
 
-    api.setBufferCount(win, total);
+        api.setBufferCount(win, total);
 
-    s->buf_count = total;
-    if (collect_dmabufs(s) < 0)
-        return -1;
+        s->buf_count = total;
+        if (collect_dmabufs(s) < 0)
+            return -1;
+    }
 
     LOGI("connecting to %s (%dx%d, %d bufs, root=%d, compatible=%d)", sock,
          s->screen_w, s->screen_h, s->buf_count, use_root,
@@ -587,6 +606,22 @@ static void *render_thread_func(void *arg)
         bool connected = is_daemon_connected(s->ctx);
         atomic_store(&g_daemon_connected, connected);
 
+        if (s->direct && !s->direct_disabled) {
+            int index = direct_surface_acquire(s->direct);
+            if (index < 0)
+                break;
+            if (!s->running || select_dmabuf(s->ctx, index) < 0) {
+                direct_surface_cancel(s->direct, index);
+                continue;
+            }
+            int fence = refresh_done(s->ctx);
+            if (s->running)
+                direct_surface_submit(s->direct, index, fence);
+            else if (fence >= 0)
+                close(fence);
+            continue;
+        }
+
         ANativeWindowBuffer *anb = NULL;
         int acqfence = -1;
         if (api.dequeueBuffer(s->window, &anb, &acqfence) != 0 || !anb) {
@@ -720,9 +755,25 @@ Java_com_anland_termux_Native_nativeSetCustomResolution(
     LOGI("custom resolution: %dx%d", width, height);
 }
 
+static void stop_render_thread(struct consumer_state *s)
+{
+    if (s->running) {
+        s->running = false;
+        if (s->direct)
+            direct_surface_stop(s->direct);
+        pthread_mutex_unlock(&s->lock);
+        pthread_join(s->render_thread, NULL);
+        pthread_mutex_lock(&s->lock);
+    }
+    if (s->direct) {
+        direct_surface_destroy(s->direct);
+        s->direct = NULL;
+    }
+}
+
 JNIEXPORT void JNICALL
 Java_com_anland_termux_Native_nativeStart(
-    JNIEnv *env, jclass clazz, jobject surface, jobject callbackTarget)
+    JNIEnv *env, jclass clazz, jobject surface, jobject callbackTarget, jobject directParent)
 {
     atomic_store(&g_daemon_connected, false);
     if (!api_loaded) {
@@ -735,12 +786,7 @@ Java_com_anland_termux_Native_nativeStart(
 
     pthread_mutex_lock(&g_state.lock);
 
-    if (g_state.running) {
-        g_state.running = false;
-        pthread_mutex_unlock(&g_state.lock);
-        pthread_join(g_state.render_thread, NULL);
-        pthread_mutex_lock(&g_state.lock);
-    }
+    stop_render_thread(&g_state);
 
     if (g_state.ctx) {
         disconnect(g_state.ctx);
@@ -761,6 +807,11 @@ Java_com_anland_termux_Native_nativeStart(
         pthread_mutex_unlock(&g_state.lock);
         return;
     }
+
+    g_state.direct = direct_surface_create(env, directParent);
+    g_state.direct_disabled = false;
+    if (directParent && !g_state.direct)
+        LOGE("direct presentation unavailable, using SurfaceView");
 
     /* Save JVM & clipboard callback target for event-thread JNI callbacks. */
     if (!g_jvm) {
@@ -792,12 +843,7 @@ Java_com_anland_termux_Native_nativeStop(
     atomic_store(&g_daemon_connected, false);
     pthread_mutex_lock(&g_state.lock);
 
-    if (g_state.running) {
-        g_state.running = false;
-        pthread_mutex_unlock(&g_state.lock);
-        pthread_join(g_state.render_thread, NULL);
-        pthread_mutex_lock(&g_state.lock);
-    }
+    stop_render_thread(&g_state);
 
     /* Stop audio before the ctx (and its fd) is torn down. */
     audio_set_ctx(NULL);

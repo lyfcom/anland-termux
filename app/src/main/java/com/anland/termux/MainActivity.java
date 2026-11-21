@@ -36,6 +36,7 @@ import android.view.MotionEvent;
 import android.view.PointerIcon;
 import android.view.RoundedCorner;
 import android.view.Surface;
+import android.view.SurfaceControl;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
@@ -836,7 +837,7 @@ public class MainActivity extends Activity
         if (surfaceReady) {
             stopNative();
             applyConnectionConfig();
-            Native.nativeStart(surfaceView.getHolder().getSurface(), clipboard);
+            startConsumer(surfaceView.getHolder().getSurface());
             pushRefreshRate();
             applyMicState();
             applyAudioLatency();
@@ -1104,6 +1105,17 @@ public class MainActivity extends Activity
         }
     }
 
+    private void startConsumer(Surface surface) {
+        SurfaceControl directParent = null;
+        if (Build.VERSION.SDK_INT >= 36 && getIntent().getBooleanExtra("directPresentation", false)) {
+            SurfaceControl control = surfaceView.getSurfaceControl();
+            if (control != null && control.isValid()) {
+                directParent = control;
+            }
+        }
+        Native.nativeStart(surface, clipboard, directParent);
+    }
+
     @Override
     public void surfaceCreated(SurfaceHolder holder) {
     }
@@ -1120,7 +1132,7 @@ public class MainActivity extends Activity
         applyCameraState();
         stopNative();
         applyConnectionConfig();
-        Native.nativeStart(holder.getSurface(), clipboard);
+        startConsumer(holder.getSurface());
         pushRefreshRate();
         applyMicState();
         applyAudioLatency();
