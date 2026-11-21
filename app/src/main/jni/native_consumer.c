@@ -44,6 +44,13 @@ static bool api_loaded = false;
 static void on_fallback(void *userdata);
 
 static void on_exit_fallback(void *userdata);
+
+enum event_connection_state {
+    EVENT_CONNECTION_STOPPED,
+    EVENT_CONNECTION_ACTIVE,
+    EVENT_CONNECTION_RELATIVE_POINTER,
+};
+
 struct consumer_state {
     pthread_mutex_t lock;
     ANativeWindow *window;
@@ -71,7 +78,7 @@ struct consumer_state {
 
     // Event (output) thread
     pthread_t event_thread;
-    volatile bool event_running;
+    atomic_int event_connection;
     /* True while event_thread holds a started-but-not-yet-joined thread. stop only
      * signals (never joins -- on_fallback can run ON the event thread); the join is
      * deferred to the next start_event_thread() (create time), which runs on the
@@ -202,7 +209,7 @@ static void send_refresh_rate(struct consumer_state *s)
 
 /*
  * Event thread: listens for output events (clipboard, etc.) from the producer
- * on the data_fd. Runs while s->event_running is true.
+ * on the data_fd.
  */
 static void *event_thread_func(void *arg)
 {
@@ -224,7 +231,7 @@ static void *event_thread_func(void *arg)
         return NULL;
     }
 
-    while (s->event_running) {
+    while (atomic_load(&s->event_connection) != EVENT_CONNECTION_STOPPED) {
         if (!s->ctx) {
             usleep(50000);
             continue;
@@ -235,7 +242,12 @@ static void *event_thread_func(void *arg)
         if (ret <= 0)
             continue;
 
-        if (ev.type == OUTPUT_TYPE_RESOURCES_REQUEST) {
+        if (ev.type == OUTPUT_TYPE_RELATIVE_POINTER_SUPPORTED) {
+            // A message already read by a retiring thread cannot re-enable the feature.
+            int expected = EVENT_CONNECTION_ACTIVE;
+            atomic_compare_exchange_strong(&s->event_connection, &expected,
+                                           EVENT_CONNECTION_RELATIVE_POINTER);
+        } else if (ev.type == OUTPUT_TYPE_RESOURCES_REQUEST) {
             /* Producer is asking for a service's fds (e.g. camera). The display lib
              * matches the type against the registered services and sends the
              * pre-created fds back over SCM_RIGHTS. */
@@ -277,16 +289,16 @@ static void join_event_thread(struct consumer_state *s)
 
 static void start_event_thread(struct consumer_state *s)
 {
-    if (s->event_running)
+    if (atomic_load(&s->event_connection) != EVENT_CONNECTION_STOPPED)
         return;
     /* Reap the previous stopped-but-unjoined thread before spawning a new one. Runs on
      * the render thread (on_exit_fallback), so this join can't self-deadlock. */
     join_event_thread(s);
-    s->event_running = true;
+    atomic_store(&s->event_connection, EVENT_CONNECTION_ACTIVE);
     if (pthread_create(&s->event_thread, NULL, event_thread_func, s) == 0)
         s->event_thread_joinable = true;
     else
-        s->event_running = false;
+        atomic_store(&s->event_connection, EVENT_CONNECTION_STOPPED);
 }
 
 static void stop_event_thread(struct consumer_state *s)
@@ -296,7 +308,7 @@ static void stop_event_thread(struct consumer_state *s)
      * event_thread (event_thread_joinable) and is reaped at create time by the next
      * start_event_thread() (or do_connect's reconnect path, both on the render
      * thread). */
-    s->event_running = false;
+    atomic_store(&s->event_connection, EVENT_CONNECTION_STOPPED);
 }
 
 /*
@@ -536,10 +548,11 @@ static void on_fallback(void *userdata)
 {
     struct consumer_state *s = userdata;
     LOGI("fallback triggered");
+    stop_event_thread(s);
 
     audio_set_ctx(NULL);   /* the lib has closed the audio fd; stop touching it */
 
-    // Disable clip listener on Java side before stopping event thread
+    // Disable the Java clipboard listener while the transport is down.
     if (g_jvm && g_activity_obj) {
         JNIEnv *env = NULL;
         bool attached = false;
@@ -556,8 +569,6 @@ static void on_fallback(void *userdata)
         if (attached)
             (*g_jvm)->DetachCurrentThread(g_jvm);
     }
-
-    stop_event_thread(s);
 }
 
 static void on_exit_fallback(void *userdata)
@@ -789,10 +800,11 @@ Java_com_anland_termux_Native_nativeStart(
     stop_render_thread(&g_state);
 
     if (g_state.ctx) {
+        stop_event_thread(&g_state);
+        join_event_thread(&g_state);
         disconnect(g_state.ctx);
         g_state.ctx = NULL;
     }
-    motion_has_last = false;
     motion_has_last = false;
     cleanup_dmabufs(&g_state);
 
@@ -949,11 +961,22 @@ Java_com_anland_termux_Native_nativeSendKey(
 }
 
 JNIEXPORT void JNICALL
-Java_com_anland_termux_Native_nativeSendMouseMotion(
-    JNIEnv *env, jclass clazz, jfloat x, jfloat y, jfloat dx, jfloat dy)
+Java_com_anland_termux_Native_nativeSendPointerMotion(
+    JNIEnv *env, jclass clazz, jfloat x, jfloat y, jfloat dx, jfloat dy, jboolean prefer_relative)
 {
     if (!g_state.ctx)
         return;
+
+    if (prefer_relative
+            && atomic_load(&g_state.event_connection) == EVENT_CONNECTION_RELATIVE_POINTER) {
+        struct InputEvent ev = {
+            .type = INPUT_TYPE_POINTER_MOTION_RELATIVE,
+            .pointer_motion = { .dx = dx, .dy = dy },
+        };
+        motion_has_last = false;
+        push_input_event(g_state.ctx, &ev);
+        return;
+    }
 
     if (dx == 0.0f && dy == 0.0f && motion_has_last) {
         dx = x - motion_last_x;

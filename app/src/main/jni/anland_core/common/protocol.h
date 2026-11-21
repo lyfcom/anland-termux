@@ -63,6 +63,8 @@ struct buf_info {
 #define INPUT_TYPE_TEXT_INPUT      9
 #define INPUT_TYPE_ACTION 10
 #define INPUT_TYPE_RESOURCE 11
+/* Only pointer_motion.dx and .dy carry data for this event. */
+#define INPUT_TYPE_POINTER_MOTION_RELATIVE 12
 
 #define SERVICE_TYPE_CAMERA 1
 
@@ -74,6 +76,7 @@ struct buf_info {
 
 #define OUTPUT_TYPE_CLIPBOARD 1
 #define OUTPUT_TYPE_RESOURCES_REQUEST 2
+#define OUTPUT_TYPE_RELATIVE_POINTER_SUPPORTED 3
 
 
 

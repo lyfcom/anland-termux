@@ -60,7 +60,9 @@
     <string name="mouse_sensitivity_label">鼠标灵敏度（加速度）</string>
     <string name="mouse_accel_value">%1$.1f 倍</string>
     <string name="pointer_capture_switch">尽可能捕获外部指针设备</string>
-    <string name="pointer_capture_hint">点击桌面视图后拦截硬件指针事件。按 Esc 键可将指针控制权交还给 Android。</string>
+    <string name="pointer_capture_hint">点击桌面后捕获指针。切换应用或使用通知栏的释放捕获操作可将控制权交还给 Android。</string>
+    <string name="captured_mouse_relative">仅发送相对鼠标移动</string>
+    <string name="captured_mouse_relative_hint">由 Linux 桌面定位捕获的鼠标指针，需要合成器支持。</string>
     <string name="transform_captured_pointer_label">转换捕获的指针移动</string>
     <string name="captured_pointer_speed_label">捕获的指针速度系数，%</string>
     <string name="captured_pointer_speed_value">%1$d%%</string>

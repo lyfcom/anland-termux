@@ -30,7 +30,11 @@ public final class Native {
     public static native void nativeSendTouch(int action, float x, float y, int pointerId);
     public static native void nativeSendTouchFrame();
     public static native void nativeSendKey(int action, int keycode);
-    public static native void nativeSendMouseMotion(float x, float y, float dx, float dy);
+    public static void nativeSendMouseMotion(float x, float y, float dx, float dy) {
+        nativeSendPointerMotion(x, y, dx, dy, false);
+    }
+    static native void nativeSendPointerMotion(float x, float y, float dx, float dy,
+                                              boolean preferRelative);
     public static native void nativeSendMouseButton(int button, boolean pressed);
     public static native void nativeSendMouseScroll(int axis, float value);
     public static native void nativeSetRefreshRate(float hz);

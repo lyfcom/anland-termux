@@ -647,11 +647,19 @@ private fun androidx.compose.foundation.lazy.LazyListScope.touchpadPage(prefs: S
     }
     item {
         val enabled = rememberBooleanPref(prefs, KEY_POINTER_CAPTURE, false)
+        val relative = rememberBooleanPref(prefs, MainActivity.KEY_CAPTURED_MOUSE_RELATIVE, true)
         val transform = rememberStringPref(prefs, KEY_TRANSFORM_CAPTURED_POINTER, pointerTransforms[0])
         val speed = rememberIntPref(prefs, KEY_CAPTURED_POINTER_SPEED_FACTOR, 100)
         SettingCard(contentPadding = 0.dp) {
             SwitchSetting(R.string.pointer_capture_switch, R.string.pointer_capture_hint, enabled.value) {
                 enabled.value = it; prefs.edit().putBoolean(KEY_POINTER_CAPTURE, it).apply()
+            }
+            if (enabled.value) {
+                SwitchSetting(R.string.captured_mouse_relative, R.string.captured_mouse_relative_hint,
+                    relative.value) {
+                    relative.value = it
+                    prefs.edit().putBoolean(MainActivity.KEY_CAPTURED_MOUSE_RELATIVE, it).apply()
+                }
             }
             Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
                 SettingDropdown(R.string.transform_captured_pointer_label,

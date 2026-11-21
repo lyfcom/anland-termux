@@ -28,9 +28,11 @@ import android.os.ParcelFileDescriptor;
 import android.os.RemoteException;
 import android.util.Log;
 import android.util.SparseArray;
+import android.util.SparseBooleanArray;
 import android.view.Display;
 import android.view.Gravity;
 import android.view.InputDevice;
+import android.view.KeyCharacterMap;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.PointerIcon;
@@ -111,6 +113,7 @@ public class MainActivity extends Activity
     };
     private static final String KEY_PIP_MODE = "pip_mode";
     private static final String KEY_POINTER_CAPTURE = "pointer_capture";
+    static final String KEY_CAPTURED_MOUSE_RELATIVE = "captured_mouse_relative";
     private static final String KEY_TRANSFORM_CAPTURED_POINTER = "transform_captured_pointer";
     private static final String KEY_CAPTURED_POINTER_SPEED_FACTOR = "captured_pointer_speed_factor";
     private static final String KEY_SCROLL_SPEED = "scroll_speed";
@@ -129,6 +132,8 @@ public class MainActivity extends Activity
     private boolean mConsumeHudEditorBackUp;
     private float mDensity = 1f;
     private boolean mPointerCaptureEnabled = false;
+    private boolean mCapturedMouseRelative = true;
+    private final SparseBooleanArray mForwardedHardwareKeys = new SparseBooleanArray();
     private String mCapturedPointerTransform = "no";
     private float mCapturedPointerSpeedFactor = 1f;
     private float mPointerX = 0f;
@@ -226,6 +231,8 @@ public class MainActivity extends Activity
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
+        if (!hasFocus)
+            releaseForwardedHardwareKeys();
         if (hasFocus && clipboard != null) {
             clipboard.pushClipboard();
         }
@@ -305,6 +312,7 @@ public class MainActivity extends Activity
     }
 
     private void stopNative() {
+        releaseForwardedHardwareKeys();
         Native.nativeStop();
         compatibleFdReady = false;
     }
@@ -504,6 +512,7 @@ public class MainActivity extends Activity
         if (mHudOverlay == null || mHudOverlay.isEditMode()) return;
         if (surfaceView.hasPointerCapture()) surfaceView.releasePointerCapture();
         releaseAllMouseButtons();
+        releaseForwardedHardwareKeys();
         systemIme.releaseHiddenInput();
         WindowInsetsController controller = getWindow().getInsetsController();
         if (controller != null) controller.hide(WindowInsets.Type.ime());
@@ -1395,6 +1404,41 @@ public class MainActivity extends Activity
     }
 
     @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        return forwardDesktopHardwareKey(event) || super.dispatchKeyEvent(event);
+    }
+
+    private boolean forwardDesktopHardwareKey(KeyEvent event) {
+        int action = event.getAction();
+        if (!hasWindowFocus() || isHudEditing()
+                || event.getDeviceId() == KeyCharacterMap.VIRTUAL_KEYBOARD
+                || (event.getFlags() & KeyEvent.FLAG_SOFT_KEYBOARD) != 0
+                || (action != KeyEvent.ACTION_DOWN && action != KeyEvent.ACTION_UP)) {
+            return false;
+        }
+        int keycode = linuxKeyCode(event, true);
+        if (keycode <= 0)
+            return false;
+
+        boolean pressed = action == KeyEvent.ACTION_DOWN;
+        if (pressed != mForwardedHardwareKeys.get(keycode)
+                && (!pressed || event.getRepeatCount() == 0)) {
+            if (pressed)
+                mForwardedHardwareKeys.put(keycode, true);
+            else
+                mForwardedHardwareKeys.delete(keycode);
+            Native.nativeSendKey(pressed ? 0 : 1, keycode);
+        }
+        return true;
+    }
+
+    private void releaseForwardedHardwareKeys() {
+        for (int i = 0; i < mForwardedHardwareKeys.size(); i++)
+            Native.nativeSendKey(1, mForwardedHardwareKeys.keyAt(i));
+        mForwardedHardwareKeys.clear();
+    }
+
+    @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
         if (isHudEditing()) {
             if (keyCode == KeyEvent.KEYCODE_BACK) {
@@ -1445,6 +1489,7 @@ public class MainActivity extends Activity
     // the normal onKeyDown/onKeyUp might miss (e.g. Fn combos).
     public boolean handleAccessibilityKey(KeyEvent event) {
         if (isHudEditing()) return false;
+        if (forwardDesktopHardwareKey(event)) return true;
         if (handleSoftKeyboardToggleKey(event))
             return true;
 
@@ -1465,9 +1510,7 @@ public class MainActivity extends Activity
         if (event.getRepeatCount() > 0)
             return true;
 
-        boolean handled = forwardKeyToLinux(event, true);
-        releasePointerCaptureOnEscape(event);
-        return handled;
+        return forwardKeyToLinux(event, true);
     }
 
     private boolean forwardKeyToLinux(KeyEvent event) {
@@ -1475,8 +1518,16 @@ public class MainActivity extends Activity
     }
 
     private boolean forwardKeyToLinux(KeyEvent event, boolean convertBackToEscape) {
+        int evdev = linuxKeyCode(event, convertBackToEscape);
+        if (evdev <= 0)
+            return false;
+
+        Native.nativeSendKey(event.getAction() == KeyEvent.ACTION_DOWN ? 0 : 1, evdev);
+        return true;
+    }
+
+    private static int linuxKeyCode(KeyEvent event, boolean convertBackToEscape) {
         int keyCode = event.getKeyCode();
-        int action = event.getAction() == KeyEvent.ACTION_DOWN ? 0 : 1;
         int evdev = -1;
 
         if (convertBackToEscape && shouldConvertBackToEscape(event))
@@ -1493,11 +1544,7 @@ public class MainActivity extends Activity
         if (evdev == -1)
             evdev = KeyCodeMapper.getScanCode(keyCode);
 
-        if (evdev == -1)
-            return false;
-
-        Native.nativeSendKey(action, evdev);
-        return true;
+        return evdev;
     }
 
     private static boolean shouldConvertBackToEscape(KeyEvent event) {
@@ -1536,7 +1583,6 @@ public class MainActivity extends Activity
             return actionHandled || super.onKeyUp(keyCode, event);
 
         forwardKeyToLinux(event);
-        releasePointerCaptureOnEscape(event);
         return true;
     }
 
@@ -1610,13 +1656,6 @@ public class MainActivity extends Activity
         }
     }
 
-    private void releasePointerCaptureOnEscape(KeyEvent event) {
-        if (event.getAction() == KeyEvent.ACTION_UP
-                && event.getKeyCode() == KeyEvent.KEYCODE_ESCAPE
-                && event.hasNoModifiers() && surfaceView.hasPointerCapture())
-            surfaceView.releasePointerCapture();
-    }
-
     private static final int CLASSIFICATION_TWO_FINGER_SWIPE = 3;
     private static final int CLASSIFICATION_MULTI_FINGER_SWIPE = 4;
     private static final int CLASSIFICATION_PINCH = 5;
@@ -1669,6 +1708,7 @@ public class MainActivity extends Activity
     private void reloadPointerCapturePreferences() {
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
         mPointerCaptureEnabled = prefs.getBoolean(KEY_POINTER_CAPTURE, false);
+        mCapturedMouseRelative = prefs.getBoolean(KEY_CAPTURED_MOUSE_RELATIVE, true);
         mCapturedPointerTransform = prefs.getString(KEY_TRANSFORM_CAPTURED_POINTER, "no");
         if (mCapturedPointerTransform == null)
             mCapturedPointerTransform = "no";
@@ -2114,7 +2154,9 @@ public class MainActivity extends Activity
             ? customScreenHeight : capturedPointerViewHeight();
         mPointerX = clamp(mPointerX + dx, 0f, Math.max(0, outputWidth));
         mPointerY = clamp(mPointerY + dy, 0f, Math.max(0, outputHeight));
-        Native.nativeSendMouseMotion(mPointerX, mPointerY, dx, dy);
+        boolean preferRelative = mCapturedMouseRelative
+            && (source & InputDevice.SOURCE_MOUSE_RELATIVE) == InputDevice.SOURCE_MOUSE_RELATIVE;
+        Native.nativeSendPointerMotion(mPointerX, mPointerY, dx, dy, preferRelative);
     }
 
     private void transformCapturedPointerDelta(float x, float y, int source) {

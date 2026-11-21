@@ -60,7 +60,9 @@
     <string name="mouse_sensitivity_label">滑鼠靈敏度（加速度）</string>
     <string name="mouse_accel_value">%1$.1f 倍</string>
     <string name="pointer_capture_switch">盡可能擷取外部指標裝置</string>
-    <string name="pointer_capture_hint">點按桌面檢視後攔截硬體指標事件。按 Esc 鍵可將指標控制權交還給 Android。</string>
+    <string name="pointer_capture_hint">點按桌面後擷取指標。切換應用程式或使用通知列的釋放擷取操作可將控制權交還給 Android。</string>
+    <string name="captured_mouse_relative">僅傳送相對滑鼠移動</string>
+    <string name="captured_mouse_relative_hint">由 Linux 桌面定位擷取的滑鼠指標，需要合成器支援。</string>
     <string name="transform_captured_pointer_label">轉換擷取的指標移動</string>
     <string name="captured_pointer_speed_label">擷取的指標速度係數，%</string>
     <string name="captured_pointer_speed_value">%1$d%%</string>

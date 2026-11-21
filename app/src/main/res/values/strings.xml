@@ -60,7 +60,9 @@
     <string name="mouse_sensitivity_label">Mouse Sensitivity (Acceleration)</string>
     <string name="mouse_accel_value">%1$.1fx</string>
     <string name="pointer_capture_switch">Capture external pointer devices when possible</string>
-    <string name="pointer_capture_hint">Intercept hardware pointer events after clicking the desktop view. Press Escape to return pointer control to Android.</string>
+    <string name="pointer_capture_hint">Capture the pointer after clicking the desktop. Switch apps or use the Release captures notification action to return control to Android.</string>
+    <string name="captured_mouse_relative">Send only relative mouse movement</string>
+    <string name="captured_mouse_relative_hint">Let the Linux desktop position a captured mouse. Requires compositor support.</string>
     <string name="transform_captured_pointer_label">Transform captured pointer movements</string>
     <string name="captured_pointer_speed_label">Captured pointer speed factor, %</string>
     <string name="captured_pointer_speed_value">%1$d%%</string>
