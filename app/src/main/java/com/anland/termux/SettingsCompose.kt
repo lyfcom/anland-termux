@@ -749,6 +749,14 @@ private fun LatencySetting(prefs: SharedPreferences, key: String, label: Int) {
 private fun androidx.compose.foundation.lazy.LazyListScope.displayPage(
     activity: SettingsActivity, prefs: SharedPreferences
 ) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA) {
+        item {
+            SettingCard(contentPadding = 0.dp, itemSpacing = 0.dp) {
+                BooleanPreference(prefs, MainActivity.KEY_DIRECT_PRESENTATION, false,
+                    R.string.direct_presentation_label, R.string.direct_presentation_hint)
+            }
+        }
+    }
     item {
         val width = rememberIntPref(prefs, "custom_width", 0)
         val height = rememberIntPref(prefs, "custom_height", 0)
