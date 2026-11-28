@@ -9,6 +9,13 @@
 #define CTRL_MSG_REJECT          8
 #define CTRL_MSG_PICKUP_FDS      9
 #define CTRL_MSG_FDS_READY      10
+#define CTRL_MSG_CONSUMER_PREROTATION 11
+#define CTRL_MSG_FDS_READY_PREROTATION 12
+
+#define DISPLAY_CAP_PREROTATION 1u
+/* Upper bits describe clockwise storage rotation in quarter-turns. */
+#define BUF_FORMAT_MASK 0xffu
+#define BUF_ROTATION_SHIFT 8
 
 #define DATA_MSG_BUF_READY       100
 #define DATA_MSG_REFRESH_DONE    101
@@ -40,8 +47,8 @@ struct screen_info {
 
 struct buf_info {
     uint32_t stride;
-    uint32_t width;      /* buffer logical width  (consumer-side native resolution) */
-    uint32_t height;     /* buffer logical height (consumer-side native resolution) */
+    uint32_t width;      /* buffer storage width */
+    uint32_t height;     /* buffer storage height */
     uint32_t format;
     uint64_t modifier;
     uint32_t offset;

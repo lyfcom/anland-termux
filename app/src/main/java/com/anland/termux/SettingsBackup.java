@@ -178,7 +178,8 @@ final class SettingsBackup {
                 "accessibility_key_intercept", "extra_keys_bar", "auto_show_extra_keys",
                 "keyboard_floating", "settings_notification", "pip_mode", "touchpad_mode",
                 "pointer_capture", MainActivity.KEY_CAPTURED_MOUSE_RELATIVE, "scroll_reverse", "back_opens_extra_keys",
-                "use_hud_overlay", "hud_hidden_mode", MainActivity.KEY_DIRECT_PRESENTATION}) types.put(key, "boolean");
+                "use_hud_overlay", "hud_hidden_mode", MainActivity.KEY_DIRECT_PRESENTATION,
+                MainActivity.KEY_PREROTATE_DISPLAY}) types.put(key, "boolean");
         return types;
     }
 }

@@ -374,4 +374,6 @@
     <string name="refresh_rate_label">刷新率</string>
     <string name="refresh_rate_auto">跟随系统</string>
     <string name="refresh_rate_hint">返回桌面后生效，实际刷新率由系统决定。</string>
+    <string name="prerotate_display_label">横屏预旋转</string>
+    <string name="prerotate_display_hint">开启低延迟显示后，按面板方向绘制以使用硬件合成。需要兼容的 KWin 后端和显示服务。</string>
 </resources>

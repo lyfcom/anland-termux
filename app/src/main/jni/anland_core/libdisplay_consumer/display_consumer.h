@@ -1,6 +1,7 @@
 #ifndef DISPLAY_CONSUMER_H
 #define DISPLAY_CONSUMER_H
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include "../common/protocol.h"
@@ -13,6 +14,8 @@ void disconnect(display_ctx *ctx);
 int  set_screen_info(display_ctx *ctx, uint32_t width, uint32_t height, uint32_t format, uint32_t refresh);
 int  push_dmabufs(display_ctx *ctx, const int *fds, const struct buf_info *infos, int count);
 int  select_dmabuf(display_ctx *ctx, int idx);
+int  request_prerotation(display_ctx *ctx, bool (*prepare_buffers)(void *, bool), void *userdata);
+bool prepare_display_buffers(display_ctx *ctx);
 int  refresh_done(display_ctx *ctx);
 int  push_input_event(display_ctx *ctx, const struct InputEvent *event);
 int  push_input_event_with_length(display_ctx *ctx, const struct InputEvent *event, void* payload, size_t size);

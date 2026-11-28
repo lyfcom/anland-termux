@@ -64,6 +64,8 @@ public class MainActivity extends Activity
     private Clipboard clipboard;
     private static final String PREFS_NAME = "anland_settings";
     static final String KEY_DIRECT_PRESENTATION = "direct_presentation";
+    static final String KEY_PREROTATE_DISPLAY = "prerotate_display";
+    private int presentationRotation;
     private static final String EXTRA_DIRECT_PRESENTATION = "directPresentation";
     private int customScreenWidth = 0;
     private int customScreenHeight = 0;
@@ -223,8 +225,14 @@ public class MainActivity extends Activity
             @Override public void onDisplayRemoved(int displayId) {}
             @Override public void onDisplayChanged(int displayId) {
                 Display d = getDisplay();
-                if (d != null && d.getDisplayId() == displayId)
+                if (d != null && d.getDisplayId() == displayId) {
+                    if (surfaceReady && presentationRotation != requestedPresentationRotation()) {
+                        SurfaceHolder holder = surfaceView.getHolder();
+                        if (holder.getSurface().isValid())
+                            surfaceChanged(holder, 0, viewWidth, viewHeight);
+                    }
                     pushRefreshRate();
+                }
             }
         };
 
@@ -1080,6 +1088,19 @@ public class MainActivity extends Activity
         }
     }
 
+    private int requestedPresentationRotation() {
+        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.BAKLAVA
+                || !prefs.getBoolean(KEY_DIRECT_PRESENTATION, false)
+                || !prefs.getBoolean(KEY_PREROTATE_DISPLAY, false)) {
+            return Surface.ROTATION_0;
+        }
+        Display display = getDisplay();
+        int rotation = display != null ? display.getRotation() : Surface.ROTATION_0;
+        return rotation == Surface.ROTATION_90 || rotation == Surface.ROTATION_270
+            ? rotation : Surface.ROTATION_0;
+    }
+
     private void startConsumer(Surface surface) {
         SurfaceControl directParent = null;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA
@@ -1089,7 +1110,8 @@ public class MainActivity extends Activity
                 directParent = control;
             }
         }
-        Native.nativeStart(surface, clipboard, directParent);
+        presentationRotation = requestedPresentationRotation();
+        Native.nativeStart(surface, clipboard, directParent, presentationRotation);
     }
 
     @Override

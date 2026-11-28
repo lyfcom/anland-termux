@@ -374,4 +374,6 @@
     <string name="refresh_rate_label">Refresh rate</string>
     <string name="refresh_rate_auto">Automatic</string>
     <string name="refresh_rate_hint">Applies when returning to the desktop. The system decides the actual refresh rate.</string>
+    <string name="prerotate_display_label">Pre-rotate landscape display</string>
+    <string name="prerotate_display_hint">With low-latency display enabled, render in the panel orientation for hardware composition. Requires a compatible KWin backend and display daemon.</string>
 </resources>

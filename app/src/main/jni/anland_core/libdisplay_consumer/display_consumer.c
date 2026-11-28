@@ -51,6 +51,8 @@ struct display_ctx {
     struct buf_info  stored_infos[MAX_BUFS];
     int              stored_count;
 
+    bool (*prepare_buffers)(void *, bool);
+    void *prepare_buffers_userdata;
     void (*fallback_cb)(void *);
     void (*exit_fallback_cb)(void *);
     void  *fallback_userdata;
@@ -234,7 +236,13 @@ static bool try_exit_fallback(display_ctx *ctx)
 
     struct ctrl_msg hdr;
     if (recv_all(ctx->ctrl_fd, &hdr, sizeof(hdr)) != 0 ||
-        hdr.type != CTRL_MSG_FDS_READY)
+        (hdr.type != CTRL_MSG_FDS_READY && hdr.type != CTRL_MSG_FDS_READY_PREROTATION)
+        || hdr.size != 0)
+        return false;
+
+    // The producer has not received any buffer metadata for this connection.
+    if (ctx->prepare_buffers &&
+        !ctx->prepare_buffers(ctx->prepare_buffers_userdata, hdr.type == CTRL_MSG_FDS_READY_PREROTATION))
         return false;
 
     /* Publish the up-transition under state_lock so a concurrent enter_fallback (or a
@@ -413,10 +421,28 @@ int push_dmabufs(display_ctx *ctx, const int *fds, const struct buf_info *infos,
     return ret;
 }
 
+int request_prerotation(display_ctx *ctx, bool (*prepare_buffers)(void *, bool), void *userdata)
+{
+    ctx->prepare_buffers = prepare_buffers;
+    ctx->prepare_buffers_userdata = userdata;
+    const struct ctrl_msg request = { .type = CTRL_MSG_CONSUMER_PREROTATION, .size = 0 };
+    return send_all(ctx->ctrl_fd, &request, sizeof(request));
+}
+
+bool prepare_display_buffers(display_ctx *ctx)
+{
+    if (ctx->fallback)
+        try_exit_fallback(ctx);
+    return !ctx->fallback;
+}
+
 int select_dmabuf(display_ctx *ctx, int idx)
 {
     if (ctx->fallback) {
-        try_exit_fallback(ctx);   /* holds state_lock internally for the transition */
+        // Layout changes must finish before the caller acquires a render slot.
+        if (ctx->prepare_buffers)
+            return -1;
+        try_exit_fallback(ctx);
         if (ctx->fallback)
             return 0;
     }

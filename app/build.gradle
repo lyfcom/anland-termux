@@ -29,8 +29,8 @@ android {
         applicationId = "com.anland.termux"
         minSdk = 30
         targetSdk = 37
-        versionCode = 19
-        versionName = "5.13.4.1-relative-pointer"
+        versionCode = 20
+        versionName = "5.13.4.1-prerotation-preview"
 
         ndk {
             abiFilters "arm64-v8a"

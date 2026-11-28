@@ -23,7 +23,7 @@ public final class Native {
     // calls back into (the Clipboard instance hosting nativeSetClipboardText /
     // nativeClipListening / nativeClipboardSync). It is stored as the global ref
     // used by the event thread's clipboard callbacks.
-    public static native void nativeStart(Surface surface, Object callbackTarget, SurfaceControl directParent);
+    public static native void nativeStart(Surface surface, Object callbackTarget, SurfaceControl directParent, int rotation);
     public static native void nativeStop();
     public static native boolean nativeIsConnected();
     public static native void nativeSetCustomResolution(int width, int height);

@@ -15,8 +15,9 @@ enum { DIRECT_BUFFER_COUNT = 3 };
 struct direct_surface;
 
 struct direct_surface *direct_surface_create(JNIEnv *env, jobject parent);
+struct direct_surface *direct_surface_recreate(struct direct_surface *previous);
 int direct_surface_export(struct direct_surface *surface, int width, int height,
-                          int view_width, int view_height,
+                          int view_width, int view_height, int rotation,
                           int fds[DIRECT_BUFFER_COUNT], struct buf_info infos[DIRECT_BUFFER_COUNT]);
 int direct_surface_acquire(struct direct_surface *surface);
 void direct_surface_cancel(struct direct_surface *surface, int index);

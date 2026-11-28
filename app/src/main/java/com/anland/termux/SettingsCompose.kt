@@ -762,6 +762,8 @@ private fun androidx.compose.foundation.lazy.LazyListScope.displayPage(
             SettingCard(contentPadding = 0.dp, itemSpacing = 0.dp) {
                 BooleanPreference(prefs, MainActivity.KEY_DIRECT_PRESENTATION, false,
                     R.string.direct_presentation_label, R.string.direct_presentation_hint)
+                BooleanPreference(prefs, MainActivity.KEY_PREROTATE_DISPLAY, false,
+                    R.string.prerotate_display_label, R.string.prerotate_display_hint)
             }
         }
     }

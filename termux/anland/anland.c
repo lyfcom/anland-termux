@@ -23,7 +23,9 @@
 
 struct client {
     int  ctrl_fd;
-    bool is_consumer;
+    bool screen_ready;
+    bool requests_prerotation;
+    uint32_t capabilities;
 };
 
 static struct client *consumer;
@@ -164,7 +166,7 @@ static int send_screen_info_msg(int fd)
 
 static void try_deliver_fds(void)
 {
-    if (!producer || deposited_fd_count < MAX_FDS) {
+    if (!producer || !consumer || !consumer->screen_ready || deposited_fd_count < MAX_FDS) {
         producer_waiting_fds = true;
         return;
     }
@@ -177,8 +179,10 @@ static void try_deliver_fds(void)
         return;
     }
 
-    if (consumer)
-        send_ctrl(consumer->ctrl_fd, CTRL_MSG_FDS_READY);
+    const bool prerotation = consumer->requests_prerotation
+        && (producer->capabilities & DISPLAY_CAP_PREROTATION);
+    send_ctrl(consumer->ctrl_fd, prerotation ? CTRL_MSG_FDS_READY_PREROTATION
+                                            : CTRL_MSG_FDS_READY);
 
     for (int i = 0; i < deposited_fd_count; i++)
         close(deposited_fds[i]);
@@ -249,6 +253,11 @@ static void handle_client_data(struct client *c)
         }
         break;
 
+    case CTRL_MSG_CONSUMER_PREROTATION:
+        if (c == consumer && hdr.size == 0 && !c->screen_ready)
+            c->requests_prerotation = true;
+        break;
+
     case CTRL_MSG_SCREEN_INFO:
         if (c == consumer && hdr.size == sizeof(struct screen_info)) {
             struct screen_info si;
@@ -256,6 +265,7 @@ static void handle_client_data(struct client *c)
             /* Always accept the consumer's screen info, even if it differs from a
              * previous connection — the Android display may have rotated or switched
              * resolution. Overwrite and forward to any waiting producer. */
+            c->screen_ready = true;
             stored_screen = si;
             has_screen_info = true;
             daemon_log("daemon: screen info %ux%u fmt=%u\n",
@@ -264,12 +274,18 @@ static void handle_client_data(struct client *c)
                 send_screen_info_msg(producer->ctrl_fd);
                 producer_waiting_screen = false;
             }
+            if (producer_waiting_fds)
+                try_deliver_fds();
         }
         break;
 
     case CTRL_MSG_PICKUP_FDS:
-        if (c == producer)
+        if (c == producer) {
+            c->capabilities = 0;
+            if (hdr.size == sizeof(c->capabilities))
+                memcpy(&c->capabilities, payload, sizeof(c->capabilities));
             try_deliver_fds();
+        }
         break;
 
     default:
@@ -305,7 +321,6 @@ static void handle_new_connection(int listen_fd)
          * one takes over the role. */
         if (consumer)
             drop_client(consumer);
-        c->is_consumer = true;
         consumer = c;
 
         clear_deposited_fds();
@@ -320,7 +335,6 @@ static void handle_new_connection(int listen_fd)
         /* Evict any prior producer (alive or ghost) before this one takes over. */
         if (producer)
             drop_client(producer);
-        c->is_consumer = false;
         producer = c;
         producer_waiting_screen = false;
         producer_waiting_fds = false;

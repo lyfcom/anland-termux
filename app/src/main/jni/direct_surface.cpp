@@ -1,4 +1,5 @@
 #include <android/hardware_buffer.h>
+#include <android/native_window.h>
 #include <android/surface_control.h>
 #include <errno.h>
 #include <poll.h>
@@ -24,6 +25,7 @@ typedef void (*set_buffer_fn)(ASurfaceTransaction *, ASurfaceControl *, AHardwar
                               int, void *, buffer_release_fn);
 
 struct direct_surface {
+    ASurfaceControl *parent;
     ASurfaceControl *layer;
     pthread_mutex_t lock;
     pthread_cond_t changed;
@@ -35,6 +37,7 @@ struct direct_surface {
 };
 
 static get_native_handle_fn get_native_handle;
+static void (*acquire_control)(ASurfaceControl *);
 using set_on_commit_fn = void (*)(ASurfaceTransaction *, void *, void (*)(void *, ASurfaceTransactionStats *));
 static set_on_commit_fn set_on_commit;
 static set_buffer_fn set_buffer_with_release;
@@ -52,10 +55,13 @@ static void unref(struct direct_surface *surface)
             AHardwareBuffer_release(slot->buffer);
     }
     ASurfaceControl_release(surface->layer);
+    ASurfaceControl_release(surface->parent);
     pthread_cond_destroy(&surface->changed);
     pthread_mutex_destroy(&surface->lock);
     free(surface);
 }
+
+static struct direct_surface *create_layer(ASurfaceControl *parent);
 
 struct direct_surface *direct_surface_create(JNIEnv *env, jobject parent)
 {
@@ -66,14 +72,26 @@ struct direct_surface *direct_surface_create(JNIEnv *env, jobject parent)
     get_native_handle = (get_native_handle_fn)dlsym(RTLD_DEFAULT, "AHardwareBuffer_getNativeHandle");
     set_buffer_with_release = (set_buffer_fn)dlsym(RTLD_DEFAULT, "ASurfaceTransaction_setBufferWithRelease");
     set_on_commit = (set_on_commit_fn)dlsym(RTLD_DEFAULT, "ASurfaceTransaction_setOnCommit");
-    if (!from_java || !get_native_handle || !set_buffer_with_release || !set_on_commit)
+    acquire_control = (void (*)(ASurfaceControl *))dlsym(RTLD_DEFAULT, "ASurfaceControl_acquire");
+    if (!from_java || !get_native_handle || !set_buffer_with_release || !set_on_commit || !acquire_control)
         return NULL;
 
     ASurfaceControl *control = from_java(env, parent);
     if (!control)
         return nullptr;
-    ASurfaceControl *layer = ASurfaceControl_create(control, "AnlandDirectPresentation");
+    auto *surface = create_layer(control);
     ASurfaceControl_release(control);
+    return surface;
+}
+
+struct direct_surface *direct_surface_recreate(struct direct_surface *previous)
+{
+    return create_layer(previous->parent);
+}
+
+static struct direct_surface *create_layer(ASurfaceControl *parent)
+{
+    ASurfaceControl *layer = ASurfaceControl_create(parent, "AnlandDirectPresentation");
     if (!layer)
         return nullptr;
 
@@ -82,6 +100,8 @@ struct direct_surface *direct_surface_create(JNIEnv *env, jobject parent)
         ASurfaceControl_release(layer);
         return nullptr;
     }
+    acquire_control(parent);
+    surface->parent = parent;
     surface->layer = layer;
 
     pthread_mutex_init(&surface->lock, NULL);
@@ -96,12 +116,12 @@ struct direct_surface *direct_surface_create(JNIEnv *env, jobject parent)
 }
 
 int direct_surface_export(struct direct_surface *surface, int width, int height,
-                          int view_width, int view_height,
+                          int view_width, int view_height, int rotation,
                           int fds[DIRECT_BUFFER_COUNT], struct buf_info infos[DIRECT_BUFFER_COUNT])
 {
     AHardwareBuffer_Desc desc{};
-    desc.width = width;
-    desc.height = height;
+    desc.width = rotation ? height : width;
+    desc.height = rotation ? width : height;
     desc.layers = 1;
     desc.format = AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM;
     // Request a CPU-writable allocation for the producer's linear DMA-BUF import.
@@ -127,13 +147,15 @@ int direct_surface_export(struct direct_surface *surface, int width, int height,
         infos[i].width = allocation.width;
         infos[i].height = allocation.height;
         infos[i].stride = allocation.stride * 4;
-        infos[i].format = allocation.format;
+        infos[i].format = allocation.format | (static_cast<uint32_t>(rotation) << BUF_ROTATION_SHIFT);
     }
 
     ASurfaceTransaction *transaction = ASurfaceTransaction_create();
-    ARect source = {0, 0, width, height};
+    ARect source = {0, 0, static_cast<int32_t>(desc.width), static_cast<int32_t>(desc.height)};
     ARect destination = {0, 0, view_width, view_height};
-    ASurfaceTransaction_setGeometry(transaction, surface->layer, source, destination, 0);
+    const int transform = rotation == 1 ? ANATIVEWINDOW_TRANSFORM_ROTATE_270
+        : rotation == 3 ? ANATIVEWINDOW_TRANSFORM_ROTATE_90 : ANATIVEWINDOW_TRANSFORM_IDENTITY;
+    ASurfaceTransaction_setGeometry(transaction, surface->layer, source, destination, transform);
     ASurfaceTransaction_setBufferTransparency(transaction, surface->layer, ASURFACE_TRANSACTION_TRANSPARENCY_OPAQUE);
     ASurfaceTransaction_setVisibility(transaction, surface->layer, ASURFACE_TRANSACTION_VISIBILITY_SHOW);
     ASurfaceTransaction_apply(transaction);

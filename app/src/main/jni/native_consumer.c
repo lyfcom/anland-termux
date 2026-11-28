@@ -56,6 +56,8 @@ struct consumer_state {
     ANativeWindow *window;
     struct direct_surface *direct;
     bool direct_disabled;
+    int requested_rotation;
+    int buffer_rotation;
     display_ctx *ctx;
     pthread_t render_thread;
     volatile bool running;
@@ -399,6 +401,67 @@ static int recv_fd_via_root_helper(const char *daemon_sock,
     return fd;
 }
 
+static bool set_direct_buffer_layout(void *userdata, bool supported)
+{
+    struct consumer_state *s = userdata;
+    const int rotation = supported ? s->requested_rotation : 0;
+    if (rotation == s->buffer_rotation)
+        return true;
+
+    struct direct_surface *surface = direct_surface_recreate(s->direct);
+    struct buf_info infos[DIRECT_BUFFER_COUNT];
+    int fds[DIRECT_BUFFER_COUNT];
+    for (int i = 0; i < DIRECT_BUFFER_COUNT; ++i)
+        fds[i] = -1;
+    if (!surface || direct_surface_export(surface, s->screen_w, s->screen_h,
+            ANativeWindow_getWidth(s->window), ANativeWindow_getHeight(s->window),
+            rotation, fds, infos) < 0) {
+        for (int i = 0; i < DIRECT_BUFFER_COUNT; ++i) {
+            if (fds[i] >= 0)
+                close(fds[i]);
+        }
+        if (surface)
+            direct_surface_destroy(surface);
+        LOGE("could not allocate direct presentation layout for rotation %d", rotation);
+        // Keep an existing ordinary direct layout when pre-rotation fails.
+        if (s->buffer_rotation == 0)
+            return true;
+
+        // The previous rotated layout cannot be handed to an older producer.
+        // Release it and reconnect with the ordinary SurfaceView transport.
+        pthread_mutex_lock(&s->lock);
+        struct direct_surface *previous = s->direct;
+        s->direct = NULL;
+        s->need_reconnect = s->running;
+        pthread_mutex_unlock(&s->lock);
+        direct_surface_destroy(previous);
+        return false;
+    }
+
+    pthread_mutex_lock(&s->lock);
+    const bool running = s->running;
+    if (running) {
+        cleanup_dmabufs(s);
+        memcpy(s->dmabuf_fds, fds, sizeof(fds));
+        memcpy(s->dmabuf_infos, infos, sizeof(infos));
+        s->buf_count = DIRECT_BUFFER_COUNT;
+        s->buffer_rotation = rotation;
+        struct direct_surface *previous = s->direct;
+        s->direct = surface;
+        surface = previous;
+        // The transport is still in fallback, so this only updates its stored set.
+        push_dmabufs(s->ctx, s->dmabuf_fds, s->dmabuf_infos, s->buf_count);
+    }
+    pthread_mutex_unlock(&s->lock);
+
+    if (!running) {
+        for (int i = 0; i < DIRECT_BUFFER_COUNT; ++i)
+            close(fds[i]);
+    }
+    direct_surface_destroy(surface);
+    return running;
+}
+
 static int do_connect(struct consumer_state *s)
 {
     atomic_store(&g_daemon_connected, false);
@@ -450,7 +513,7 @@ static int do_connect(struct consumer_state *s)
         for (int i = 0; i < DIRECT_BUFFER_COUNT; i++)
             s->dmabuf_fds[i] = -1;
         if (direct_surface_export(s->direct, s->screen_w, s->screen_h,
-                                  ANativeWindow_getWidth(win), ANativeWindow_getHeight(win),
+                                  ANativeWindow_getWidth(win), ANativeWindow_getHeight(win), 0,
                                   s->dmabuf_fds, s->dmabuf_infos) == 0) {
             LOGI("using direct SurfaceControl presentation");
         } else {
@@ -518,6 +581,8 @@ static int do_connect(struct consumer_state *s)
         return -1;
     }
 
+    if (s->direct && !s->direct_disabled && s->requested_rotation)
+        request_prerotation(s->ctx, set_direct_buffer_layout, s);
     set_screen_info(s->ctx, s->screen_w, s->screen_h,
                     PIXEL_FORMAT_RGBA_8888, s->refresh_mhz);
     push_dmabufs(s->ctx, s->dmabuf_fds, s->dmabuf_infos, s->buf_count);
@@ -618,6 +683,10 @@ static void *render_thread_func(void *arg)
         atomic_store(&g_daemon_connected, connected);
 
         if (s->direct && !s->direct_disabled) {
+            if (s->requested_rotation && !prepare_display_buffers(s->ctx)) {
+                usleep(16000);
+                continue;
+            }
             int index = direct_surface_acquire(s->direct);
             if (index < 0)
                 break;
@@ -784,7 +853,7 @@ static void stop_render_thread(struct consumer_state *s)
 
 JNIEXPORT void JNICALL
 Java_com_anland_termux_Native_nativeStart(
-    JNIEnv *env, jclass clazz, jobject surface, jobject callbackTarget, jobject directParent)
+    JNIEnv *env, jclass clazz, jobject surface, jobject callbackTarget, jobject directParent, jint rotation)
 {
     atomic_store(&g_daemon_connected, false);
     if (!api_loaded) {
@@ -822,6 +891,8 @@ Java_com_anland_termux_Native_nativeStart(
 
     g_state.direct = direct_surface_create(env, directParent);
     g_state.direct_disabled = false;
+    g_state.buffer_rotation = 0;
+    g_state.requested_rotation = rotation == 1 || rotation == 3 ? rotation : 0;
     if (directParent && !g_state.direct)
         LOGE("direct presentation unavailable, using SurfaceView");
 
