@@ -11,6 +11,13 @@ on:
         options:
           - Debian 13
           - Ubuntu 26.04
+      debian_source:
+        description: 'Debian KWin repository'
+        type: choice
+        default: 'lfdevs/kwin'
+        options:
+          - lfdevs/kwin
+          - lyfcom/kwin
       tag:
         description: 'Tag'
         required: true
@@ -52,11 +59,14 @@ jobs:
           ccache --show-stats
 
       - name: Clone repository
+        env:
+          SOURCE_REPO: ${{ inputs.debian_source }}
+          SOURCE_REF: ${{ inputs.tag }}
         run: |
           cd ~
           git config --global user.email "actions@github.com"
           git config --global user.name "GitHub Actions"
-          git clone -b ${{ github.event.inputs.tag }} --depth 1 https://github.com/lfdevs/kwin.git kwin
+          git clone -b "$SOURCE_REF" --depth 1 "https://github.com/$SOURCE_REPO.git" kwin
           cd kwin
           git switch -c ci-build
 
